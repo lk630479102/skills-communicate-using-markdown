@@ -67,3 +67,26 @@ def _load_cached_token(self):
 # /workspace/.cache/feishu/cred.json
 {"app_id": "cli_xxx", "app_secret": "xxx"}
 ```
+
+## 可观测:心跳文件
+
+最后一步是让「它到底还活着吗」变成一个可以一眼回答的问题。每轮轮询写一次心跳:
+
+```json
+{
+  "status": "alive",
+  "updated_at_str": "2026-11-13 15:00:34",
+  "token_expires_at": 1784556834,
+  "restarts": 0,
+  "llm": "echo",
+  "last_error": null
+}
+```
+
+`status` 只有三种取值,足够覆盖所有场景:`alive`(正常)、`auth_error`(凭证失效,进程不退出、60 秒后重试,凭证一更新即恢复)、`degraded`(有异常但还在跑)。有了它,「掉线」就从一句抱怨变成一条日志。
+
+## 一张图收尾
+
+<img src="images/feishu-bot-hardening.png" alt="机器人被多层保护环包裹,周围环绕着时钟、重试箭头、云和齿轮图标,象征 token 续期、网络重试、进程自愈与心跳观测四类防线" width="720">
+
+图里的几层环,对应的正是上面那张清单里的六条加固项。真正让机器人不再「总是掉线」的,不是某一处代码,而是**每一层都在自己失效的时候留下可读的痕迹**——心跳文件写着状态,日志写着原因,错误码指着该改哪里。
