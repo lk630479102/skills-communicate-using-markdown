@@ -13,9 +13,16 @@ jobs:
   open-and-merge:
     runs-on: ubuntu-latest
     steps:
+      # 必须 checkout：gh pr create / gh pr merge 需要 git 仓库上下文
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: start-blog
+
       - name: Create pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           if gh pr view start-blog --json number >/dev/null 2>&1; then
             echo "PR 已存在,跳过创建"
@@ -28,6 +35,7 @@ jobs:
       - name: Merge pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           sleep 5
           gh pr merge start-blog --merge --delete-branch=false \
