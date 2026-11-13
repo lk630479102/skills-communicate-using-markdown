@@ -30,3 +30,40 @@
 - [x] 进程自愈:主循环兜住所有异常,凭证失效时进入等待恢复态而不是退出
 - [x] 凭证热更新:指纹一变立即重新鉴权,不用重启进程
 - [x] 心跳可观测:每轮写 `health.json`,随时能判断 bot 是死是活、卡在哪一步
+
+## 关键实现:token 缓存必须绑定凭证指纹
+
+这是最容易漏掉的一处。最初的实现只按过期时间判断缓存:
+
+```python
+def token(self, force=False):
+    if not force and self._token and self._token_expire - time.time() > TOKEN_SKEW:
+        return self._token          # ← Secret 已经换过了,这里还在用旧 token
+    ...
+```
+
+问题在于:凭据被替换成新的那一瞬间,旧的 token **在服务器上其实还是有效的**,所以它不会报错,只会让你带着一个即将失效的身份继续跑,直到两小时后自然过期。修法是给缓存加一层凭证指纹:
+
+```python
+def _fingerprint(self):
+    """凭证指纹(sha256 前 16 位),不存明文。"""
+    raw = "%s|%s" % (self._app_id or "", self._app_secret or "")
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+def _load_cached_token(self):
+    d = json.load(open(self.token_file))
+    if d.get("expire_at", 0) - time.time() <= TOKEN_SKEW:
+        return False
+    # 指纹不一致 = 凭证换过了,旧 token 不能复用
+    if d.get("fingerprint") != self._fingerprint():
+        return False
+    self._token, self._token_expire = d["token"], d["expire_at"]
+    return True
+```
+
+顺带一提,凭证指纹还能解决另一个坑:secret 存储更新后,**已经在跑的进程环境变量不会变**。所以光有环境变量是不够的,得支持从文件读凭证,让指纹一变就热切换:
+
+```bash
+# /workspace/.cache/feishu/cred.json
+{"app_id": "cli_xxx", "app_secret": "xxx"}
+```
