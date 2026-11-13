@@ -8,36 +8,67 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   open-and-merge:
     runs-on: ubuntu-latest
     steps:
-      # 必须 checkout：gh pr create / gh pr merge 需要 git 仓库上下文
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: start-blog
 
       - name: Create pull request
+        id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          set +e
           if gh pr view start-blog --json number >/dev/null 2>&1; then
             echo "PR 已存在,跳过创建"
-          else
-            gh pr create --base main --head start-blog \
-              --title "Day 1: 把「总是掉线」的飞书机器人修好" \
-              --body "GitHub Skills 练习第 1 篇:标题层级、任务清单、代码示例与配图,均已通过 Step 1-4 校验。"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          OUT=$(gh pr create --base main --head start-blog \
+            --title "Day 1: 把「总是掉线」的飞书机器人修好" \
+            --body "GitHub Skills 练习第 1 篇:标题层级、任务清单、代码示例与配图,均已通过 Step 1-4 校验。" 2>&1)
+          RC=$?
+          echo "rc=$RC"
+          echo "$OUT"
+          if [ $RC -ne 0 ]; then
+            {
+              echo "### PR 创建失败诊断"
+              echo ""
+              echo '```'
+              echo "rc=$RC"
+              echo "$OUT"
+              echo '```'
+              echo ""
+              echo "token scopes: $(curl -sI -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/user | grep -i x-oauth-scopes)"
+            } > /tmp/pr_error.md
+            gh issue comment 1 --body-file /tmp/pr_error.md || true
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "created=true" >> "$GITHUB_OUTPUT"
 
       - name: Merge pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          set +e
           sleep 5
-          gh pr merge start-blog --merge --delete-branch=false \
-            || gh pr merge start-blog --merge --delete-branch=false --admin \
-            || echo "合并未成功,保留 PR 等待手动处理"
+          OUT=$(gh pr merge start-blog --merge --delete-branch=false 2>&1)
+          RC=$?
+          echo "$OUT"
+          if [ $RC -ne 0 ]; then
+            OUT2=$(gh pr merge start-blog --merge --delete-branch=false --admin 2>&1)
+            echo "$OUT2"
+            if [ $? -ne 0 ]; then
+              { echo "### 合并失败诊断"; echo ""; echo '```'; echo "$OUT"; echo "$OUT2"; echo '```'; } > /tmp/merge_error.md
+              gh issue comment 1 --body-file /tmp/merge_error.md || true
+            fi
+          fi
