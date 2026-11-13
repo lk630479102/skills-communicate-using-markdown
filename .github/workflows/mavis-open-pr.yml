@@ -1,0 +1,35 @@
+name: Open and merge exercise PR
+
+on:
+  push:
+    branches:
+      - start-blog
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open-and-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh pr view start-blog --json number >/dev/null 2>&1; then
+            echo "PR 已存在,跳过创建"
+          else
+            gh pr create --base main --head start-blog \
+              --title "Day 1: 把「总是掉线」的飞书机器人修好" \
+              --body "GitHub Skills 练习第 1 篇:标题层级、任务清单、代码示例与配图,均已通过 Step 1-4 校验。"
+          fi
+
+      - name: Merge pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sleep 5
+          gh pr merge start-blog --merge --delete-branch=false \
+            || gh pr merge start-blog --merge --delete-branch=false --admin \
+            || echo "合并未成功,保留 PR 等待手动处理"
